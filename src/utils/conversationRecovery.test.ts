@@ -84,6 +84,14 @@ async function importFreshConversationRecovery() {
       if (process.env.CLAUDE_CODE_USE_FOUNDRY) return 'foundry'
       return 'firstParty'
     },
+    usesAnthropicAccountFlow: () => true,
+    isGithubNativeAnthropicMode: (resolvedModel?: string) => {
+      if (!process.env.CLAUDE_CODE_USE_GITHUB) return false
+      const model = resolvedModel?.trim() || process.env.OPENAI_MODEL?.trim() || ''
+      return model.toLowerCase().includes('claude-')
+    },
+    getAPIProviderForStatsig: () => 'firstParty',
+    isFirstPartyAnthropicBaseUrl: () => true,
   }))
   const nonce = `${Date.now()}-${Math.random()}`
   return import(`./conversationRecovery.ts?conversationRecoveryTest=${nonce}`)
@@ -126,6 +134,43 @@ test('loadConversationForResume rejects oversized reconstructed transcripts', as
   expect((caught as Error).message).toContain(
     'Reconstructed transcript is too large to resume safely',
   )
+})
+
+test('getResumeTranscriptSizeBytes matches the enforced resume limit math', async () => {
+  process.env.CLAUDE_CODE_SIMPLE = '1'
+  const { getResumeTranscriptSizeBytes, MAX_RESUME_MESSAGE_BYTES } =
+    await importFreshConversationRecovery()
+
+  const small = [user(id(3), 'hello')]
+  const large = [user(id(4), 'x'.repeat(2 * 1024 * 1024))]
+
+  expect(getResumeTranscriptSizeBytes(small)).toBeGreaterThan(0)
+  expect(getResumeTranscriptSizeBytes(large)).toBeGreaterThan(
+    getResumeTranscriptSizeBytes(small),
+  )
+  expect(MAX_RESUME_MESSAGE_BYTES).toBe(8 * 1024 * 1024)
+})
+
+test('getResumeTranscriptWarningState warns before the resume cap is hit', async () => {
+  process.env.CLAUDE_CODE_SIMPLE = '1'
+  const {
+    getResumeTranscriptWarningState,
+    MAX_RESUME_MESSAGE_BYTES,
+  } = await importFreshConversationRecovery()
+
+  const warningMessage = [user(id(5), 'x'.repeat(6 * 1024 * 1024))]
+  const criticalMessage = [user(id(6), 'x'.repeat(7 * 1024 * 1024))]
+  const smallMessage = [user(id(7), 'short')]
+
+  const warning = getResumeTranscriptWarningState(warningMessage)
+  const critical = getResumeTranscriptWarningState(criticalMessage)
+  const none = getResumeTranscriptWarningState(smallMessage)
+
+  expect(warning.level).toBe('warning')
+  expect(warning.bytes).toBeLessThanOrEqual(MAX_RESUME_MESSAGE_BYTES)
+  expect(critical.level).toBe('critical')
+  expect(critical.bytes).toBeLessThanOrEqual(MAX_RESUME_MESSAGE_BYTES)
+  expect(none.level).toBe('none')
 })
 
 test('deserializeMessages preserves thinking blocks for GitHub native Claude transport', async () => {

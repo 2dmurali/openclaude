@@ -21,6 +21,7 @@ import type { AutoUpdaterResult } from '../../utils/autoUpdater.js';
 import { getExternalEditor } from '../../utils/editor.js';
 import { isEnvTruthy } from '../../utils/envUtils.js';
 import { formatDuration } from '../../utils/format.js';
+import { getResumeTranscriptWarningState, type ResumeTranscriptWarningState } from '../../utils/conversationRecovery.js';
 import { setEnvHookNotifier } from '../../utils/hooks/fileChangedWatcher.js';
 import { toIDEDisplayName } from '../../utils/ide.js';
 import { getMessagesAfterCompactBoundary } from '../../utils/messages.js';
@@ -80,6 +81,10 @@ export function Notifications(t0) {
     t3 = $[1];
   }
   const tokenUsage = t3;
+  const resumeTranscriptWarning = useMemo(
+    () => getResumeTranscriptWarningState(messages),
+    [messages],
+  );
   const mainLoopModel = useMainLoopModel();
   let t4;
   if ($[2] !== mainLoopModel || $[3] !== tokenUsage) {
@@ -174,28 +179,7 @@ export function Notifications(t0) {
   useEffect(t9, t10);
   const t11 = isNarrow ? "flex-start" : "flex-end";
   const t12 = isInOverageMode ?? false;
-  let t13;
-  if ($[15] !== apiKeyStatus || $[16] !== autoUpdaterResult || $[17] !== debug || $[18] !== ideSelection || $[19] !== isAutoUpdating || $[20] !== isShowingCompactMessage || $[21] !== mainLoopModel || $[22] !== mcpClients || $[23] !== notifications || $[24] !== onAutoUpdaterResult || $[25] !== onChangeIsUpdating || $[26] !== shouldShowAutoUpdater || $[27] !== t12 || $[28] !== tokenUsage || $[29] !== verbose) {
-    t13 = <NotificationContent ideSelection={ideSelection} mcpClients={mcpClients} notifications={notifications} isInOverageMode={t12} isTeamOrEnterprise={isTeamOrEnterprise} apiKeyStatus={apiKeyStatus} debug={debug} verbose={verbose} tokenUsage={tokenUsage} mainLoopModel={mainLoopModel} shouldShowAutoUpdater={shouldShowAutoUpdater} autoUpdaterResult={autoUpdaterResult} isAutoUpdating={isAutoUpdating} isShowingCompactMessage={isShowingCompactMessage} onAutoUpdaterResult={onAutoUpdaterResult} onChangeIsUpdating={onChangeIsUpdating} />;
-    $[15] = apiKeyStatus;
-    $[16] = autoUpdaterResult;
-    $[17] = debug;
-    $[18] = ideSelection;
-    $[19] = isAutoUpdating;
-    $[20] = isShowingCompactMessage;
-    $[21] = mainLoopModel;
-    $[22] = mcpClients;
-    $[23] = notifications;
-    $[24] = onAutoUpdaterResult;
-    $[25] = onChangeIsUpdating;
-    $[26] = shouldShowAutoUpdater;
-    $[27] = t12;
-    $[28] = tokenUsage;
-    $[29] = verbose;
-    $[30] = t13;
-  } else {
-    t13 = $[30];
-  }
+  const t13 = <NotificationContent ideSelection={ideSelection} mcpClients={mcpClients} notifications={notifications} isInOverageMode={t12} isTeamOrEnterprise={isTeamOrEnterprise} apiKeyStatus={apiKeyStatus} debug={debug} verbose={verbose} tokenUsage={tokenUsage} mainLoopModel={mainLoopModel} resumeTranscriptWarning={resumeTranscriptWarning} shouldShowAutoUpdater={shouldShowAutoUpdater} autoUpdaterResult={autoUpdaterResult} isAutoUpdating={isAutoUpdating} isShowingCompactMessage={isShowingCompactMessage} onAutoUpdaterResult={onAutoUpdaterResult} onChangeIsUpdating={onChangeIsUpdating} />;
   let t14;
   if ($[31] !== t11 || $[32] !== t13) {
     t14 = <SentryErrorBoundary><Box flexDirection="column" alignItems={t11} flexShrink={0} overflowX="hidden">{t13}</Box></SentryErrorBoundary>;
@@ -224,6 +208,7 @@ function NotificationContent({
   verbose,
   tokenUsage,
   mainLoopModel,
+  resumeTranscriptWarning,
   shouldShowAutoUpdater,
   autoUpdaterResult,
   isAutoUpdating,
@@ -244,6 +229,7 @@ function NotificationContent({
   verbose: boolean;
   tokenUsage: number;
   mainLoopModel: string;
+  resumeTranscriptWarning: ResumeTranscriptWarningState;
   shouldShowAutoUpdater: boolean;
   autoUpdaterResult: AutoUpdaterResult | null;
   isAutoUpdating: boolean;
@@ -318,6 +304,15 @@ function NotificationContent({
             {tokenUsage} tokens
           </Text>
         </Box>}
+      {resumeTranscriptWarning.level !== 'none' && <Box>
+          <Text color={resumeTranscriptWarning.level === 'critical' ? 'error' : 'warning'} wrap="truncate">
+            {resumeTranscriptWarning.level === 'critical' ? 'Resume transcript is near the safe limit. Use /compact now to keep this session resumable.' : 'Resume transcript is getting large. Use /compact before closing this session.'}
+          </Text>
+          <Text dimColor wrap="truncate">
+            {' '}
+            ({formatResumeTranscriptSize(resumeTranscriptWarning.bytes)} / {formatResumeTranscriptSize(resumeTranscriptWarning.maxBytes)})
+          </Text>
+        </Box>}
       {!isBriefOnly && <TokenWarning tokenUsage={tokenUsage} model={mainLoopModel} />}
       {shouldShowAutoUpdater && <AutoUpdaterWrapper verbose={verbose} onAutoUpdaterResult={onAutoUpdaterResult} autoUpdaterResult={autoUpdaterResult} isUpdating={isAutoUpdating} onChangeIsUpdating={onChangeIsUpdating} showSuccessMessage={!isShowingCompactMessage} />}
       {feature('VOICE_MODE') ? voiceEnabled && voiceError && <Box>
@@ -328,4 +323,8 @@ function NotificationContent({
       <MemoryUsageIndicator />
       <SandboxPromptFooterHint />
     </>;
+}
+
+function formatResumeTranscriptSize(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
 }

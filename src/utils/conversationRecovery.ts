@@ -77,7 +77,19 @@ const SEND_USER_FILE_TOOL_NAME: string | null = feature('KAIROS')
 // Hard cap for reconstructed resume payloads before REPL boot. 8 MiB keeps
 // resume bounded well below the multi-GB failure mode we saw while leaving
 // enough room for normal compacted sessions plus resume hook context.
-const MAX_RESUME_MESSAGE_BYTES = 8 * 1024 * 1024
+export const MAX_RESUME_MESSAGE_BYTES = 8 * 1024 * 1024
+
+export const RESUME_TRANSCRIPT_WARNING_RATIO = 0.7
+export const RESUME_TRANSCRIPT_CRITICAL_RATIO = 0.85
+
+export type ResumeTranscriptWarningLevel = 'none' | 'warning' | 'critical'
+
+export type ResumeTranscriptWarningState = {
+  level: ResumeTranscriptWarningLevel
+  bytes: number
+  maxBytes: number
+  ratio: number
+}
 
 export class ResumeTranscriptTooLargeError extends Error {
   constructor(
@@ -94,8 +106,33 @@ export class ResumeTranscriptTooLargeError extends Error {
   }
 }
 
+export function getResumeTranscriptSizeBytes(messages: Message[]): number {
+  return Buffer.byteLength(jsonStringify(messages), 'utf8')
+}
+
+export function getResumeTranscriptWarningState(
+  messages: Message[],
+): ResumeTranscriptWarningState {
+  const bytes = getResumeTranscriptSizeBytes(messages)
+  const ratio = bytes / MAX_RESUME_MESSAGE_BYTES
+  let level: ResumeTranscriptWarningLevel = 'none'
+
+  if (ratio >= RESUME_TRANSCRIPT_CRITICAL_RATIO) {
+    level = 'critical'
+  } else if (ratio >= RESUME_TRANSCRIPT_WARNING_RATIO) {
+    level = 'warning'
+  }
+
+  return {
+    level,
+    bytes,
+    maxBytes: MAX_RESUME_MESSAGE_BYTES,
+    ratio,
+  }
+}
+
 function assertResumeMessageSize(messages: Message[]): void {
-  const bytes = Buffer.byteLength(jsonStringify(messages), 'utf8')
+  const bytes = getResumeTranscriptSizeBytes(messages)
   if (bytes > MAX_RESUME_MESSAGE_BYTES) {
     throw new ResumeTranscriptTooLargeError(
       bytes,
